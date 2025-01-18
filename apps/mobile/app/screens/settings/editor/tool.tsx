@@ -1,7 +1,7 @@
 /*
 This file is part of the Notesnook project (https://notesnook.com/)
 
-Copyright (C) 2022 Streetwriters (Private) Limited
+Copyright (C) 2023 Streetwriters (Private) Limited
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -25,8 +25,8 @@ import { presentDialog } from "../../../components/dialog/functions";
 import { IconButton } from "../../../components/ui/icon-button";
 import { SvgView } from "../../../components/ui/svg";
 import Paragraph from "../../../components/ui/typography/paragraph";
-import { useThemeStore } from "../../../stores/use-theme-store";
-import { getElevation } from "../../../utils";
+import { useThemeColors } from "@notesnook/theme";
+import { getElevationStyle } from "../../../utils/elevation";
 import { SIZE } from "../../../utils/size";
 import { renderGroup } from "./common";
 import { DraggableItem, useDragState } from "./state";
@@ -34,7 +34,10 @@ import { findToolById, getToolIcon } from "./toolbar-definition";
 import ToolSheet from "./tool-sheet";
 
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
-import { ToolId } from "@notesnook/editor/dist/toolbar/tools";
+import type { ToolId } from "@notesnook/editor";
+import PremiumService from "../../../services/premium";
+import { strings } from "@notesnook/intl";
+
 export const Tool = ({
   item,
   index,
@@ -48,13 +51,13 @@ export const Tool = ({
   ]);
   const [_recieving, setRecieving] = React.useState(false);
   const [recievePosition, setRecievePosition] = React.useState("above");
-  const colors = useThemeStore((state) => state.colors);
+  const { colors } = useThemeColors();
   const isSubgroup = typeof item === "object";
-  const isDragged =
-    dragged &&
-    dragged.item &&
-    ((dragged.type === "tool" && dragged?.item === item) ||
-      (isSubgroup && dragged?.item[0] === item[0]));
+  const isDragged = !dragged
+    ? false
+    : dragged.item &&
+      ((dragged.type === "tool" && dragged.item === item) ||
+        (isSubgroup && dragged.item?.[0] === item?.[0]));
 
   const dimensions = React.useRef({
     height: 0,
@@ -63,93 +66,104 @@ export const Tool = ({
   const tool =
     isSubgroup || item === "dummy" ? null : findToolById(item as ToolId);
   const iconSvgString =
-    isSubgroup || !tool ? null : getToolIcon(tool.icon as ToolId);
+    isSubgroup || !tool
+      ? null
+      : getToolIcon(tool.icon as ToolId, colors.secondary.icon);
 
-  const buttons = React.useMemo(
-    () =>
-      isSubgroup
-        ? [
-            {
-              name: "minus",
-              onPress: () => {
-                presentDialog({
-                  context: "global",
-                  title: "Delete collapsed section?",
-                  positiveText: "Delete",
-                  paragraph:
-                    "All tools in the collapsed section will also be removed.",
-                  positivePress: () => {
-                    if (typeof groupIndex !== "number") return;
-                    const _data = useDragState.getState().data.slice();
-                    _data[groupIndex].splice(index, 1);
-                    setData(_data);
-                  }
-                });
+  const buttons = React.useCallback(() => {
+    const btns = isSubgroup
+      ? [
+          {
+            name: "minus",
+            onPress: () => {
+              if (!PremiumService.get()) {
+                PremiumService.sheet("global");
+                return;
               }
-            },
-            {
-              name: "plus",
-              onPress: () => {
-                ToolSheet.present({
-                  item,
-                  index,
-                  groupIndex,
-                  parentIndex
-                });
-              }
-            }
-          ]
-        : [
-            {
-              name: "minus",
-              onPress: () => {
-                if (typeof groupIndex !== "number") return;
-                const _data = useDragState.getState().data.slice();
-                if (typeof parentIndex !== "number") {
-                  const index = _data[groupIndex].findIndex(
-                    (tool) => tool === item
-                  );
+              presentDialog({
+                context: "global",
+                title: strings.deleteCollapsed(),
+                positiveText: strings.delete(),
+                paragraph: strings.deleteCollapsedDesc(),
+                positivePress: () => {
+                  if (typeof groupIndex !== "number") return;
+                  const _data = useDragState.getState().data.slice();
                   _data[groupIndex].splice(index, 1);
-                } else {
-                  const index = (
-                    _data[parentIndex][groupIndex] as ToolId[]
-                  ).findIndex((tool: string) => tool === item);
-                  (_data[parentIndex][groupIndex] as ToolId[]).splice(index, 1);
+                  setData(_data);
                 }
-
-                setData(_data);
-              }
+              });
             }
-          ],
-    [groupIndex, index, isSubgroup, item, parentIndex, setData]
-  );
+          },
+          {
+            name: "plus",
+            onPress: () => {
+              if (!PremiumService.get()) {
+                PremiumService.sheet("global");
+                return;
+              }
+              ToolSheet.present({
+                item,
+                index,
+                groupIndex,
+                parentIndex
+              });
+            }
+          }
+        ]
+      : [
+          {
+            name: "minus",
+            onPress: () => {
+              if (!PremiumService.get()) {
+                PremiumService.sheet("global");
+                return;
+              }
+              if (typeof groupIndex !== "number") return;
+              const _data = useDragState.getState().data.slice();
+              if (typeof parentIndex !== "number") {
+                const index = _data[groupIndex]?.findIndex(
+                  (tool: any) => tool === item
+                );
+                _data[groupIndex]?.splice(index, 1);
+              } else {
+                const index = (
+                  _data[parentIndex][groupIndex] as ToolId[]
+                )?.findIndex((tool: string) => tool === item);
+                (_data[parentIndex][groupIndex] as ToolId[]).splice(index, 1);
+              }
+              setData(_data);
+            }
+          }
+        ];
 
-  if (parentIndex === undefined && !isSubgroup) {
-    buttons.unshift({
-      name: "unfold-less-horizontal",
-      onPress: () => {
-        if (groupIndex === undefined) return;
-        const _data = useDragState.getState().data.slice();
-        const hasSubGroup = Array.isArray(
-          _data[groupIndex][_data[groupIndex].length - 1]
-        );
-        const _item = _data[groupIndex].splice(index, 1)[0];
-        if (hasSubGroup) {
-          const subgroup = _data[groupIndex][
-            _data[groupIndex].length - 1
-          ] as ToolId[];
-          subgroup.unshift(_item as ToolId);
-        } else {
-          _data[groupIndex].push([]);
-          (_data[groupIndex][_data[groupIndex].length - 1] as ToolId[]).unshift(
-            _item as ToolId
+    if (parentIndex === undefined && !isSubgroup) {
+      btns.unshift({
+        name: "unfold-less-horizontal",
+        onPress: () => {
+          if (groupIndex === undefined) return;
+          const _data = useDragState.getState().data.slice();
+          const hasSubGroup = Array.isArray(
+            _data[groupIndex][_data[groupIndex].length - 1]
           );
-        }
+          const _item = _data[groupIndex]?.splice(index, 1)[0];
+          if (hasSubGroup) {
+            const subgroup = _data[groupIndex][
+              _data[groupIndex].length - 1
+            ] as ToolId[];
+            subgroup.unshift(_item as ToolId);
+          } else {
+            _data[groupIndex]?.push([]);
+            (
+              _data[groupIndex][_data[groupIndex].length - 1] as ToolId[]
+            ).unshift(_item as ToolId);
+          }
 
-        setData(_data);
-      }
-    });
-  }
+          setData(_data);
+        }
+      });
+    }
+    return btns;
+  }, [groupIndex, index, isSubgroup, item, parentIndex, setData]);
 
   const renderChild = React.useCallback(
     (hover?: boolean) => (
@@ -160,9 +174,11 @@ export const Tool = ({
             if (!isDragged) dimensions.current = event.nativeEvent.layout;
           }}
           style={{
-            backgroundColor: isSubgroup ? colors.bg : colors.nav,
+            backgroundColor: isSubgroup
+              ? colors.primary.background
+              : colors.secondary.background,
             borderWidth: isSubgroup ? 0 : 1,
-            borderColor: isSubgroup ? undefined : colors.nav,
+            borderColor: isSubgroup ? undefined : colors.secondary.background,
             marginBottom: 10,
             width: isDragged ? dimensions.current.width : "100%",
             paddingTop: isSubgroup ? 15 : 0,
@@ -174,7 +190,7 @@ export const Tool = ({
             alignItems: "center",
             justifyContent: "space-between",
             paddingLeft: isSubgroup ? 30 : 12,
-            ...getElevation(hover ? 3 : 0)
+            ...getElevationStyle(hover ? 3 : 0)
           }}
         >
           <View
@@ -191,17 +207,21 @@ export const Tool = ({
                 style={{ marginRight: 5 }}
                 size={SIZE.md}
                 name="drag"
-                color={colors.icon}
+                color={colors.primary.icon}
               />
             )}
             <Paragraph
               style={{
                 marginLeft: iconSvgString ? 10 : 0
               }}
-              color={isSubgroup ? colors.icon : colors.pri}
+              color={
+                isSubgroup
+                  ? colors.secondary.paragraph
+                  : colors.primary.paragraph
+              }
               size={isSubgroup ? SIZE.xs : SIZE.sm - 1}
             >
-              {isSubgroup ? "COLLAPSED" : tool?.title}
+              {isSubgroup ? strings.collapsed() : tool?.title}
             </Paragraph>
           </View>
 
@@ -211,19 +231,19 @@ export const Tool = ({
               alignItems: "center"
             }}
           >
-            {buttons.map((item) => (
+            {buttons().map((btn) => (
               <IconButton
                 top={0}
                 left={0}
                 bottom={0}
                 right={0}
-                key={item.name}
-                onPress={item.onPress}
+                key={item + btn.name}
+                onPress={btn.onPress}
                 style={{
                   marginLeft: 10
                 }}
-                name={item.name}
-                color={colors.icon}
+                name={btn.name}
+                color={colors.primary.icon}
                 size={SIZE.lg}
               />
             ))}
@@ -243,10 +263,11 @@ export const Tool = ({
     ),
     [
       buttons,
-      colors.bg,
-      colors.icon,
-      colors.nav,
-      colors.pri,
+      colors.primary.background,
+      colors.primary.icon,
+      colors.secondary.background,
+      colors.primary.paragraph,
+      colors.secondary.paragraph,
       groupIndex,
       iconSvgString,
       index,
@@ -258,13 +279,17 @@ export const Tool = ({
   );
 
   const onDrop = (data: DraxDragWithReceiverEventData) => {
+    if (!PremiumService.get()) {
+      PremiumService.sheet("global");
+      return;
+    }
     const isDroppedAbove = data.receiver.receiveOffsetRatio.y < 0.5;
     const dragged = data.dragged.payload;
     const reciever = data.receiver.payload;
-    const _data = useDragState.getState().data.slice();
-
-    const isFromSubgroup = typeof dragged.parentIndex === "number";
-    const isDroppedAtSubgroup = typeof reciever.parentIndex === "number";
+    const _data = useDragState.getState().data?.slice();
+    if (!_data) return;
+    const isFromSubgroup = typeof dragged?.parentIndex === "number";
+    const isDroppedAtSubgroup = typeof reciever?.parentIndex === "number";
 
     if (dragged.type === "tool") {
       const fromIndex = dragged.index;
@@ -294,7 +319,6 @@ export const Tool = ({
           : _data.splice(dragged.groupIndex, 1);
       }
     }
-
     setData(_data);
     setRecieving(false);
     return data.dragAbsolutePosition;
@@ -320,11 +344,11 @@ export const Tool = ({
           parentIndex
         }}
         receptive={
-          dragged.type === "group" ||
-          (dragged.type !== "tool" && isSubgroup) ||
-          (dragged.type === "tool" && isSubgroup) ||
-          (!isSubgroup && dragged.type === "subgroup") ||
-          (dragged.item && dragged.item?.indexOf(item as string) > -1)
+          dragged?.type === "group" ||
+          (dragged?.type !== "tool" && isSubgroup) ||
+          (dragged?.type === "tool" && isSubgroup) ||
+          (!isSubgroup && dragged?.type === "subgroup") ||
+          (dragged?.item && dragged.item.indexOf(item as string) > -1)
             ? false
             : true
         }
@@ -340,7 +364,10 @@ export const Tool = ({
         receivingStyle={{
           paddingBottom: recievePosition === "below" ? 50 : 0,
           paddingTop: recievePosition === "above" ? 50 : 0,
-          backgroundColor: dragged.type === "subgroup" ? colors.nav : undefined,
+          backgroundColor:
+            dragged?.type === "subgroup"
+              ? colors.secondary.background
+              : undefined,
           marginTop: recievePosition === "above" ? 5 : 0,
           marginBottom: recievePosition === "below" ? 5 : 0,
           borderRadius: 10

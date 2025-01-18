@@ -1,13 +1,30 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
 import './globals.js';
 import 'react-native-get-random-values';
-import 'react-native-gesture-handler';
 import React from 'react';
 import { AppRegistry, LogBox, Platform, UIManager } from 'react-native';
 import Config from 'react-native-config';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import appJson from './app.json';
-import Notifications from '../app/services/notifications';
+import Notifications from "../app/services/notifications";
+import NetInfo from "@react-native-community/netinfo";
+import { enableFreeze } from "react-native-screens";
+import {BackgroundSync} from '../app/services/background-sync';
+
+BackgroundSync.registerHeadlessTask();
+BackgroundSync.start();
+Notifications.init();
+
+enableFreeze(true);
+NetInfo.configure({
+  reachabilityUrl: "https://notesnook.com",
+  reachabilityTest: (response) => {
+    if (!response) return false;
+    return response?.status >= 200 && response?.status < 300;
+  }
+});
+
+
 const appName = appJson.name;
 if (Config.isTesting) {
   Date.prototype.toLocaleString = () => 'XX-XX-XX';
@@ -19,19 +36,16 @@ if (__DEV__) {
   console.warn = () => null;
   LogBox.ignoreAllLogs();
 }
-let NotesnookShare;
-Notifications.init();
-let QuickNoteIOS;
 
 const AppProvider = () => {
-  const App = require('../app/app.js').default;
+  const App = require('../app/app').default;
   return <App />;
 };
 
 AppRegistry.registerComponent(appName, () => AppProvider);
 
 const ShareProvider = () => {
-  NotesnookShare = require('../share/index').default;
+  let NotesnookShare = require('../share/index').default;
   return Platform.OS === 'ios' ? (
     <SafeAreaProvider>
       <NotesnookShare quicknote={false} />
@@ -42,14 +56,3 @@ const ShareProvider = () => {
 };
 
 AppRegistry.registerComponent('NotesnookShare', () => ShareProvider);
-
-const QuickNoteProvider = () => {
-  QuickNoteIOS = require('../share/quick-note').default;
-  return (
-    <SafeAreaProvider>
-      <QuickNoteIOS />
-    </SafeAreaProvider>
-  );
-};
-
-AppRegistry.registerComponent('QuickNoteIOS', () => QuickNoteProvider);

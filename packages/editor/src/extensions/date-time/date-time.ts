@@ -1,7 +1,7 @@
 /*
 This file is part of the Notesnook project (https://notesnook.com/)
 
-Copyright (C) 2022 Streetwriters (Private) Limited
+Copyright (C) 2023 Streetwriters (Private) Limited
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -23,6 +23,7 @@ import {
   InputRuleFinder,
   ExtendedRegExpMatchArray
 } from "@tiptap/core";
+import { formatDate } from "@notesnook/common";
 
 declare module "@tiptap/core" {
   interface Commands<ReturnType> {
@@ -44,8 +45,21 @@ declare module "@tiptap/core" {
   }
 }
 
-export const DateTime = Extension.create({
+export type DateTimeOptions = {
+  dateFormat: string;
+  timeFormat: "12-hour" | "24-hour";
+};
+
+export const DateTime = Extension.create<DateTimeOptions>({
   name: "datetime",
+
+  addOptions() {
+    return {
+      dateFormat: "DD-MM-YYYY",
+      timeFormat: "12-hour"
+    };
+  },
+
   addKeyboardShortcuts() {
     return {
       "Alt-t": ({ editor }) => editor.commands.insertTime(),
@@ -59,15 +73,31 @@ export const DateTime = Extension.create({
       insertDate:
         () =>
         ({ commands }) =>
-          commands.insertContent(currentDate()),
+          commands.insertContent(
+            formatDate(Date.now(), {
+              dateFormat: this.options.dateFormat,
+              type: "date"
+            })
+          ),
       insertTime:
         () =>
         ({ commands }) =>
-          commands.insertContent(currentTime()),
+          commands.insertContent(
+            formatDate(Date.now(), {
+              timeFormat: this.options.timeFormat,
+              type: "time"
+            })
+          ),
       insertDateTime:
         () =>
         ({ commands }) =>
-          commands.insertContent(currentDateTime())
+          commands.insertContent(
+            formatDate(Date.now(), {
+              dateFormat: this.options.dateFormat,
+              timeFormat: this.options.timeFormat,
+              type: "date-time"
+            })
+          )
     };
   },
 
@@ -76,54 +106,40 @@ export const DateTime = Extension.create({
       shortcutInputRule({
         shortcut: "/time",
         replace: () => {
-          return currentTime();
+          return formatDate(Date.now(), {
+            timeFormat: this.options.timeFormat,
+            type: "time"
+          });
         }
       }),
       shortcutInputRule({
         shortcut: "/date",
         replace: () => {
-          return currentDate();
+          return formatDate(Date.now(), {
+            dateFormat: this.options.dateFormat,
+            type: "date"
+          });
         }
       }),
       shortcutInputRule({
         shortcut: "/now",
         replace: () => {
-          return currentDateTime();
+          return formatDate(Date.now(), {
+            dateFormat: this.options.dateFormat,
+            timeFormat: this.options.timeFormat,
+            type: "date-time"
+          });
         }
       })
     ];
   }
 });
 
-function currentTime() {
-  return new Date().toLocaleTimeString("en-US", {
-    second: undefined,
-    minute: "2-digit",
-    hour12: true,
-    hour: "2-digit"
-  });
-}
-
-function currentDateTime() {
-  return `${getISO8601Date()}, ${currentTime()}`;
-}
-
-function currentDate() {
-  return getISO8601Date();
-}
-
-function getISO8601Date(): string {
-  const year = new Date().getFullYear();
-  const month = new Date().getMonth() + 1;
-  const day = new Date().getDate();
-  return `${year}-${month}-${day}`;
-}
-
 function shortcutInputRule(config: {
   shortcut: string;
   replace: () => string;
 }) {
-  const regex = new RegExp(`(^| )${config.shortcut}(\\s)`);
+  const regex = new RegExp(`(^| )${config.shortcut}(\\s)`, "i");
   return textInputRule({
     find: regex,
     replace: (match) => {
@@ -155,4 +171,37 @@ function textInputRule(config: {
       if (config.after) config.after(props);
     }
   });
+}
+
+export function replaceDateTime(
+  value: string,
+  dateFormat = "DD-MM-YYYY",
+  timeFormat: "12-hour" | "24-hour" = "12-hour"
+) {
+  value = value.replaceAll(
+    "/time ",
+    formatDate(Date.now(), {
+      timeFormat,
+      type: "time"
+    }) + " "
+  );
+
+  value = value.replaceAll(
+    "/date ",
+    formatDate(Date.now(), {
+      dateFormat,
+      type: "date"
+    }) + " "
+  );
+
+  value = value.replaceAll(
+    "/now ",
+    formatDate(Date.now(), {
+      dateFormat,
+      timeFormat,
+      type: "date-time"
+    }) + " "
+  );
+
+  return value;
 }
